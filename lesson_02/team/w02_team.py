@@ -42,15 +42,32 @@ from cse351 import *
 # global
 call_count = 0
 
+def worker(url):
+    item = get_data_from_server(url)
+    print(f'  - {item["name"]}')
+
+
 def get_urls(film6, kind):
     global call_count
+
+    threads =[]
 
     urls = film6[kind]
     print(kind)
     for url in urls:
         call_count += 1
-        item = get_data_from_server(url)
-        print(f'  - {item["name"]}')
+        t = threading.Thread(target = worker, args=(url,))
+        threads.appent(t)
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        print(kind)
+        for result in results:
+            print(f' - {result}')
 
 def main():
     global call_count
