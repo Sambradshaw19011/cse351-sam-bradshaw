@@ -1,11 +1,5 @@
-"""
-Course    : CSE 351
-Assignment: 02
-Student   : <your name here>
-
-Instructions:
-    - review instructions in the course
-"""
+# Assignment 02
+# CSE 351
 
 # Don't import any other packages for this assignment
 import os
@@ -15,7 +9,7 @@ from money import *
 from cse351 import *
 
 # ---------------------------------------------------------------------------
-def main(): 
+def main():
 
     print('\nATM Processing Program:')
     print('=======================\n')
@@ -24,14 +18,23 @@ def main():
 
     # Load ATM data files
     data_files = get_filenames('data_files')
-    # print(data_files)
-    
+
     log = Log(show_terminal=True)
     log.start_timer()
 
     bank = Bank()
 
-    # TODO - Add a ATM_Reader for each data file
+    # Create one ATM_Reader thread for each data file
+    threads = []
+
+    for filename in data_files:
+        atm_reader = ATM_Reader(filename, bank)
+        threads.append(atm_reader)
+        atm_reader.start()
+
+    # Wait for all ATM threads to finish
+    for thread in threads:
+        thread.join()
 
     test_balances(bank)
 
@@ -39,21 +42,105 @@ def main():
 
 
 # ===========================================================================
-class ATM_Reader():
-    # TODO - implement this class here
-    ...
+class ATM_Reader(threading.Thread):
+
+    def __init__(self, filename, bank):
+        super().__init__()
+        self.filename = filename
+        self.bank = bank
+
+    def run(self):
+
+        with open(self.filename, 'r') as file:
+
+            for line in file:
+
+                # Ignore comments
+                if line.startswith('#'):
+                    continue
+
+                # Remove whitespace and split transaction
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                account_number, transaction_type, amount = line.split(',')
+
+                account_number = int(account_number)
+                amount = Money(amount)
+
+                # Process transaction
+                if transaction_type == 'd':
+                    self.bank.deposit(account_number, amount)
+
+                elif transaction_type == 'w':
+                    self.bank.withdraw(account_number, amount)
 
 
 # ===========================================================================
 class Account():
-    # TODO - implement this class here
-    ...
+
+    def __init__(self):
+        self.balance = Money('0.00')
+        self.lock = threading.Lock()
+
+    def deposit(self, amount):
+
+        with self.lock:
+            self.balance.add(amount)
+
+    def withdraw(self, amount):
+
+        with self.lock:
+            self.balance.sub(amount)
+
+    def get_balance(self):
+
+        with self.lock:
+            return self.balance
 
 
 # ===========================================================================
 class Bank():
-    # TODO - implement this class here
-    ...
+
+    def __init__(self):
+        self.accounts = {}
+        self.lock = threading.Lock()
+
+    def deposit(self, account_id, amount):
+
+        # Safely get/create the account
+        with self.lock:
+            if account_id not in self.accounts:
+                self.accounts[account_id] = Account()
+
+            account = self.accounts[account_id]
+
+        # Update the account balance
+        account.deposit(amount)
+
+    def withdraw(self, account_id, amount):
+
+        # Safely get/create the account
+        with self.lock:
+            if account_id not in self.accounts:
+                self.accounts[account_id] = Account()
+
+            account = self.accounts[account_id]
+
+        # Update the account balance
+        account.withdraw(amount)
+
+    def get_balance(self, account):
+
+        with self.lock:
+            if account not in self.accounts:
+                self.accounts[account] = Account()
+
+            account_obj = self.accounts[account]
+
+        return account_obj.get_balance()
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +152,7 @@ def get_filenames(folder):
         if filename.endswith(".dat"):
             filenames.append(os.path.join(folder, filename))
     return filenames
+
 
 # ---------------------------------------------------------------------------
 def create_data_files_if_needed():
@@ -99,6 +187,7 @@ def create_data_files_if_needed():
                 f.write(f'{account},{trans_type},{amount}\n')
 
     print()
+
 
 # ---------------------------------------------------------------------------
 def test_balances(bank):
@@ -140,7 +229,7 @@ def test_balances(bank):
         print('\nAll account balances are correct')
 
 
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
-
