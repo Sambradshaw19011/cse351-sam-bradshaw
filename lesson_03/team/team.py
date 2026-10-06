@@ -33,23 +33,41 @@ TODO
 
 from datetime import datetime, timedelta
 import threading
+import queue
 from common import *
-
 # Include cse 351 common Python files
 from cse351 import *
 
 # global
 call_count = 0
+url_queue = queue.Queue()
+
+def worker():
+    url = url_queue.get()
+    item = get_data_from_server(url)
+    print(f'  - {item["name"]}')
+    url_queue.task_done()
+
 
 def get_urls(film6, kind):
     global call_count
+
+    threads = []
 
     urls = film6[kind]
     print(kind)
     for url in urls:
         call_count += 1
-        item = get_data_from_server(url)
-        print(f'  - {item["name"]}')
+
+        url_queue.put(url)
+
+        thread = threading.Thread(target=worker)
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+        
 
 def main():
     global call_count
