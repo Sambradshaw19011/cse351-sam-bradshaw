@@ -1,60 +1,118 @@
 """
 Course    : CSE 351
 Assignment: 04
-Student   : <your name here>
+Student   : Sam Bradshaw
 
-Instructions:
-    - review instructions in the course
-
-In order to retrieve a weather record from the server, Use the URL:
-
-f'{TOP_API_URL}/record/{name}/{recno}
-
-where:
-
-name: name of the city
-recno: record number starting from 0
-
+Assignment 04: Retrieving Weather Data from a Server
 """
 
 import time
+import threading
 from common import *
-
 from cse351 import *
 
-THREADS = 0                 # TODO - set for your program
-WORKERS = 0                 # TODO - set for your program
-RECORDS_TO_RETRIEVE = 5000  # Don't change
+THREADS = 20
+WORKERS = 10
+RECORDS_TO_RETRIEVE = 5000
 
 
 # ---------------------------------------------------------------------------
-def retrieve_weather_data():
-    # TODO - fill out this thread function (and arguments)
-    ...
-
-
-# ---------------------------------------------------------------------------
-# TODO - Create Worker threaded class
-
-
-# ---------------------------------------------------------------------------
-# TODO - Complete this class
-class NOAA:
-
+# A bounded wrapper around the required Queue351 class.
+# Limits each queue to 10 items and safely coordinates concurrent access.
+class BoundedQueue:
     def __init__(self):
-        ...
+        self.queue = Queue351()
+        self.lock = threading.Lock()
+        self.slots = threading.Semaphore(10)
+        self.items = threading.Semaphore(0)
+
+    def put(self, item):
+        self.slots.acquire()
+
+        with self.lock:
+            self.queue.put(item)
+
+        self.items.release()
+
+    def get(self):
+        self.items.acquire()
+
+        with self.lock:
+            item = self.queue.get()
+
+        self.slots.release()
+        return item
+
+
+# ---------------------------------------------------------------------------
+# Thread function that retrieves weather records from the server.
+def retrieve_weather_data(command_queue, result_queue):
+    while True:
+        command = command_queue.get()
+
+        if command is None:
+            break
+
+        city, recno = command
+
+        data = get_data_from_server(
+            f'{TOP_API_URL}/record/{city}/{recno}'
+        )
+
+        if data is not None:
+            result_queue.put(
+                (data['city'], data['date'], data['temp'])
+            )
+
+
+# ---------------------------------------------------------------------------
+# Worker thread that processes weather records.
+class Worker(threading.Thread):
+    def __init__(self, result_queue, noaa):
+        super().__init__()
+        self.result_queue = result_queue
+        self.noaa = noaa
+
+    def run(self):
+        while True:
+            record = self.result_queue.get()
+
+            if record is None:
+                break
+
+            city, date, temp = record
+            self.noaa.add_record(city, date, temp)
+
+
+# ---------------------------------------------------------------------------
+# Stores weather records and calculates average temperatures.
+class NOAA:
+    def __init__(self):
+        self.data = {city: [] for city in CITIES}
+        self.lock = threading.Lock()
+
+    def add_record(self, city, date, temp):
+        with self.lock:
+            self.data[city].append((date, temp))
 
     def get_temp_details(self, city):
-        return 0.0
+        with self.lock:
+            records = self.data[city]
+
+            if not records:
+                return 0.0
+
+            total = sum(temp for date, temp in records)
+            return total / len(records)
 
 
 # ---------------------------------------------------------------------------
-class Queue351():
+class Queue351:
     """ This is the queue object to use for this class. Do not modify!! """
 
     def __init__(self):
         self.__items = []
-   
+
     def put(self, item):
         assert len(self.__items) <= 10
         self.__items.append(item)
@@ -89,6 +147,7 @@ def verify_noaa_results(noaa):
     print()
     print('NOAA Results: Verifying Results')
     print('===================================')
+
     for name in CITIES:
         answer = answers[name]
         avg = noaa.get_temp_details(name)
@@ -96,8 +155,10 @@ def verify_noaa_results(noaa):
         if abs(avg - answer) > 0.00001:
             msg = f'FAILED  Expected {answer}'
         else:
-            msg = f'PASSED'
+            msg = 'PASSED'
+
         print(f'{name:>15}: {avg:<10} {msg}')
+
     print('===================================')
 
 
@@ -109,31 +170,86 @@ def main():
 
     noaa = NOAA()
 
-    # Start server
+    # Start server data loading.
     data = get_data_from_server(f'{TOP_API_URL}/start')
 
-    # Get all cities number of records
+    if data is None:
+        print('Could not connect to the server. Start server.py first.')
+        return
+
+    # Get the number of records for each city.
     print('Retrieving city details')
     city_details = {}
-    name = 'City'
-    print(f'{name:>15}: Records')
+
+    print(f'{"City":>15}: Records')
     print('===================================')
+
     for name in CITIES:
-        city_details[name] = get_data_from_server(f'{TOP_API_URL}/city/{name}')
-        print(f'{name:>15}: Records = {city_details[name]['records']:,}')
+        city_details[name] = get_data_from_server(
+            f'{TOP_API_URL}/city/{name}'
+        )
+
+        if city_details[name] is None:
+            print(f'Could not retrieve details for {name}')
+            return
+
+        print(
+            f'{name:>15}: Records = '
+            f'{city_details[name]["records"]:,}'
+        )
+
     print('===================================')
 
-    records = RECORDS_TO_RETRIEVE
+    # Create the two required bounded queues.
+    command_queue = BoundedQueue()
+    result_queue = BoundedQueue()
 
-    # TODO - Create any queues, semaphores, locks or barriers you need
+    # Start worker threads first so they can process records immediately.
+    workers = []
 
+    for _ in range(WORKERS):
+        worker = Worker(result_queue, noaa)
+        worker.start()
+        workers.append(worker)
 
+    # Start the retrieval threads.
+    retrieval_threads = []
 
+    for _ in range(THREADS):
+        thread = threading.Thread(
+            target=retrieve_weather_data,
+            args=(command_queue, result_queue)
+        )
+        thread.start()
+        retrieval_threads.append(thread)
 
-    # End server - don't change below
+    # Queue all weather-record retrieval commands.
+    # The bounded queue ensures no more than 10 commands are waiting.
+    for city in CITIES:
+        for recno in range(RECORDS_TO_RETRIEVE):
+            command_queue.put((city, recno))
+
+    # Tell each retrieval thread to stop after finishing its commands.
+    for _ in range(THREADS):
+        command_queue.put(None)
+
+    # Wait until all retrieval threads have finished.
+    for thread in retrieval_threads:
+        thread.join()
+
+    # Tell each worker to stop after processing its queued records.
+    for _ in range(WORKERS):
+        result_queue.put(None)
+
+    # Wait until all workers have finished processing.
+    for worker in workers:
+        worker.join()
+
+    # End server - keep this request after all processing is complete.
     data = get_data_from_server(f'{TOP_API_URL}/end')
     print(data)
 
+    # Verify average temperatures.
     verify_noaa_results(noaa)
 
     log.stop_timer('Run time: ')
@@ -141,4 +257,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
