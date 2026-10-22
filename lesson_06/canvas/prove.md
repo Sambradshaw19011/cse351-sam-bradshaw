@@ -34,13 +34,13 @@ The following folders will be created when `assignment06.py` is initially run:
 
 ## Classes / Files
 
-| Class / File | Purpose |
-| --- | --- |
+| Class / File      | Purpose                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------- |
 | `assignment06.py` | This is the assignment Python file.  Modify anything you need to complete the requirements. |
-| `faces` | 13,233 face images to be processed (see downlink above) |
-| `step1_smoothed` | Smoothed images from `faces`|
-| `step2_grayscale` | Converted image to gray scale from `step1_smoothed` |
-| `step3_edges` | Final images with edge detection from `step2_grayscale` |
+| `faces`           | 13,233 face images to be processed (see downlink above)                                     |
+| `step1_smoothed`  | Smoothed images from `faces`                                                                |
+| `step2_grayscale` | Converted image to gray scale from `step1_smoothed`                                         |
+| `step3_edges`     | Final images with edge detection from `step2_grayscale`                                     |
 
 
 ### Program Diagram
@@ -149,7 +149,6 @@ There is no sample output, however, the folder `step3_edges` should contain 13,2
 1. Anything can be placed in a Python queue.
 1. You will decide on the number of processes for each stage of processing.  At first, limit each stage with 1 process.
 1. Don't forget that an `All done` message must be sent to any processes that are reading from a queue.
-1. Sometimes, when a queue is finished being used, you can call `que.close()` on it.
 
 ## Rubric
 
